@@ -20,6 +20,7 @@ from .normalize import normalize
 from .policy import ResponsePolicy, decide
 from .scoring import detect_techniques, score
 from .store import Store
+from .tickets import LocalTickets, TicketBackend
 
 # A responder executes an approved/allowed action against a real system (EDR, firewall, IdP).
 Responder = Callable[[str, str | None, Incident], str]
@@ -47,8 +48,10 @@ class RunResult:
 
 class Orchestrator:
     def __init__(self, policy: ResponsePolicy, store: Store, enricher: Enricher,
-                 llm: Summarizer | None = None, responder: Responder = simulated_responder) -> None:
+                 llm: Summarizer | None = None, responder: Responder = simulated_responder,
+                 tickets: TicketBackend | None = None) -> None:
         self.policy, self.store, self.enricher, self.llm, self.responder = policy, store, enricher, llm, responder
+        self.tickets = tickets or LocalTickets(store)
 
     def run(self, records: Iterable[dict[str, Any] | str]) -> RunResult:
         res = RunResult()
@@ -75,18 +78,18 @@ class Orchestrator:
                 if prior and prior.decision == a.decision:  # replay: keep the analyst's decision, don't re-execute
                     a.status, a.approved_by = prior.status, prior.approved_by
                     if a.action == "create_ticket":
-                        inc.ticket_id, created = self.store.upsert_ticket(inc.key, inc.title, inc.risk_score)
+                        inc.ticket_id, created = self.tickets.upsert(inc)
                         res.tickets_updated += not created
                     continue
                 self.store.audit("policy_decision", incident=inc.id, action=a.action, target=a.target,
                                  decision=a.decision, reasons=a.reasons)
                 if a.decision == "ALLOW":
                     if a.action == "create_ticket":
-                        inc.ticket_id, created = self.store.upsert_ticket(inc.key, inc.title, inc.risk_score)
+                        inc.ticket_id, created = self.tickets.upsert(inc)
                         res.tickets_created += created
                         res.tickets_updated += not created
                         a.status = "executed"
-                        self.store.audit("ticket", incident=inc.id, ticket=inc.ticket_id, created=created)
+                        self.store.audit("ticket", incident=inc.id, ticket=inc.ticket_id, created=created, backend=self.tickets.name)
                     else:
                         result = self.responder(a.action, a.target, inc)
                         a.status = "executed"

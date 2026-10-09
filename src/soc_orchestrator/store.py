@@ -76,9 +76,10 @@ class Store:
         return [Incident.model_validate_json(r["data"]) for r in rows]
 
     # --- idempotent ticketing --------------------------------------------------------------
-    def upsert_ticket(self, key: str, title: str, risk_score: int) -> tuple[str, bool]:
+    def upsert_ticket(self, key: str, title: str, risk_score: int, ticket_id: str | None = None) -> tuple[str, bool]:
         """Return (ticket_id, created). Same key => same ticket, however many times it's called."""
-        ticket_id = "INC-" + key[:8].upper()
+        existing = self.get_ticket(key)
+        ticket_id = existing or ticket_id or "INC-" + key[:8].upper()
         with self.lock, self.db:
             cur = self.db.execute(
                 "INSERT OR IGNORE INTO tickets (key, ticket_id, title, risk_score, created, updated) VALUES (?, ?, ?, ?, ?, ?)",
@@ -88,6 +89,10 @@ class Store:
                 self.db.execute("UPDATE tickets SET risk_score = MAX(risk_score, ?), updated = ?, updates = updates + 1 "
                                 "WHERE key = ?", (risk_score, _now(), key))
         return ticket_id, created
+
+    def get_ticket(self, key: str) -> str | None:
+        row = self.db.execute("SELECT ticket_id FROM tickets WHERE key = ?", (key,)).fetchone()
+        return row["ticket_id"] if row else None
 
     def ticket_count(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM tickets").fetchone()[0]

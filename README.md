@@ -5,7 +5,7 @@
 ### AI-assisted incident response where the AI writes the summary and the policy makes the call
 
 [![CI](https://github.com/CdxDebian/SOC-Incident-Orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/CdxDebian/SOC-Incident-Orchestrator/actions/workflows/ci.yml)
-![Tests](https://img.shields.io/badge/adversarial_tests-47_passing-34D399?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-60_passing-34D399?style=flat-square)
 ![MITRE ATT&CK](https://img.shields.io/badge/mapped_to-MITRE_ATT%26CK-C8102E?style=flat-square)
 ![Python](https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
@@ -13,7 +13,7 @@
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
 
-[Sample run](docs/sample-run.md) · [Threat model](docs/THREAT_MODEL.md) · [Companion: AgentGate](https://github.com/CdxDebian/AgentGate)
+[Sample run](docs/sample-run.md) · [Architecture](docs/ARCHITECTURE.md) · [Threat model](docs/THREAT_MODEL.md) · [Companion: AgentGate](https://github.com/CdxDebian/AgentGate)
 
 </div>
 
@@ -78,17 +78,22 @@ Full output: [`docs/sample-run.md`](docs/sample-run.md).
 - Summaries that **invent** hosts, IPs or domains, or that **downplay** an incident the rules scored high, are rejected.
 - The model **never** decides actions. The policy engine reads rule-derived facts only, so an obeyed injection can't add, remove or approve anything (`test_model_cannot_change_actions`).
 
+**🔗 Correlation by weighted evidence, not guesswork**
+- Events are linked when shared signals add up: external IOC 0.6, host 0.5, user 0.3, discounted by time gap, threshold 0.5. A shared service account alone never merges two hosts; shared attacker infrastructure does. Details: [architecture](docs/ARCHITECTURE.md#weighted-correlation).
+- IOC extraction: public IPv4, domains (real TLDs only), URLs, email addresses, MD5/SHA1/SHA256, with refanging (`hxxp`, `[.]`).
+
 **🧩 Every score explains itself**
 - Risk is a sum of named factors, each carrying its evidence. "Why is this a 90?" is answered by reading the incident.
 - ATT&CK mapping is deterministic: brute force → valid accounts, Office → PowerShell, encoded commands, download cradles, LSASS access, service installs, log clearing, account creation, C2 to TI-flagged infrastructure.
 
 **🚦 Policy-as-code with hard stops** — [`policy/policy.yaml`](policy/policy.yaml)
+- An explicit **action allowlist**: remove `isolate_host` from the list and containment is off, with no code change
 - `ALLOW`: tickets, paging, blocking IOCs with strong TI (score ≥ 70)
 - `REQUIRE_APPROVAL`: host isolation, account disable, needs a named analyst
 - `BLOCK`: never-isolate assets (DCs), protected accounts (break-glass, service), never-block indicators (public DNS, own ranges), blast-radius cap
 
 **🔁 Idempotent by construction**
-- Ticket id derives from a stable correlation key with `INSERT OR IGNORE`. Replaying the same telemetry three times yields the same two tickets, no re-fired actions, and analyst decisions intact.
+- Tickets are keyed on a stable correlation key, either in local SQLite or as **GitHub Issues** (de-duplicated by an `orch:<key>` label). Replaying the same telemetry three times yields the same two tickets, no re-fired actions, and analyst decisions intact. If the database is lost, existing issues are relinked, not recreated.
 
 **🔗 Audit-ready**
 - Every stage writes to a SHA-256 hash chain with secret redaction; edits or deletions are pinpointed by `verify`.
@@ -101,7 +106,7 @@ git clone https://github.com/CdxDebian/SOC-Incident-Orchestrator && cd SOC-Incid
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                           # 47 tests, including the adversarial suite
+pytest                                           # 60 tests, including the adversarial suite
 soc-orchestrator run samples/events.jsonl        # the run shown above
 soc-orchestrator run --ollama http://localhost:11434   # with a local LLM (llama3.2:3b by default)
 ```
@@ -121,18 +126,19 @@ OLLAMA_URL=http://ollama:11434 docker compose --profile llm up   # + local Ollam
 | `GET /audit/verify` | Check the audit hash chain |
 | `GET /health` | Liveness, and which summariser is active |
 
-Set `ORCH_API_KEY` to require an `X-API-Key` header, `VT_API_KEY` to use VirusTotal instead of the offline feed.
+Set `ORCH_API_KEY` to require an `X-API-Key` header, `VT_API_KEY` to use VirusTotal instead of the offline feed, and `GITHUB_REPO` + `GITHUB_TOKEN` to open tickets as GitHub Issues (CLI: `--github-repo owner/name`).
 
 ## Tested like an attacker would
 
-[`tests/test_adversarial.py`](tests/test_adversarial.py) covers the claims above:
+[`tests/`](tests/) covers the claims above:
 
 | Area | What's proven |
 |---|---|
 | Prompt injection | hostile text flagged and fenced · downplaying summaries rejected · model can't touch actions · invented entities rejected |
 | Malformed input | broken JSON, bad/overflowing timestamps, wrong types, unknown sources, 100 KB fields, never crashes |
-| Policy correctness | containment needs a human · DCs and protected accounts never contained · never-block beats a bad feed · blast-radius cap |
-| Idempotency | replay ×3 = same tickets, no re-fired actions, analyst decisions preserved |
+| Correlation | weighted links explained · shared user alone never merges hosts · shared IOC does · time window enforced |
+| Policy correctness | containment needs a human · DCs and protected accounts never contained · never-block beats a bad feed · blast-radius cap · action allowlist |
+| Idempotency | replay ×3 = same tickets, no re-fired actions, analyst decisions preserved · GitHub Issues: created once, relinked after data loss, no API calls on replay |
 | Degraded dependencies | TI timeout and provider errors fall back fast · LLM outage → deterministic summaries |
 | Audit | chain verifies · edits and deletions detected · secrets redacted |
 
@@ -140,11 +146,12 @@ Set `ORCH_API_KEY` to require an `X-API-Key` header, `VT_API_KEY` to use VirusTo
 
 ```
 src/soc_orchestrator/
-  normalize.py   ingest + validation + dedupe        correlate.py  IOC extraction + union-find correlation
+  normalize.py   ingest + validation + dedupe        correlate.py  IOC extraction + weighted correlation
   enrich.py      TI with deadlines + fallback        scoring.py    ATT&CK mapping + explainable score
   llm.py         evidence boundary + validation      policy.py     ALLOW / REQUIRE_APPROVAL / BLOCK
   store.py       SQLite, idempotent tickets, audit   compliance.py SOC 2 / ISO 27001 / NIST CSF evidence
-  pipeline.py    orchestration + human approval      api.py · cli.py
+  pipeline.py    orchestration + human approval      tickets.py    SQLite / GitHub Issues, idempotent
+  api.py · cli.py
 policy/policy.yaml · samples/ · tests/ · docs/ · Dockerfile · docker-compose.yml
 ```
 

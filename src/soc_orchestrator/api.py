@@ -2,7 +2,8 @@
 
     uvicorn soc_orchestrator.api:create_app --factory --reload
 
-Set ORCH_API_KEY to require an `X-API-Key` header. Set OLLAMA_URL / OLLAMA_MODEL to use a
+Set ORCH_API_KEY to require an `X-API-Key` header. Set GITHUB_REPO (owner/name) and GITHUB_TOKEN
+to open tickets as GitHub Issues instead of local SQLite tickets. Set OLLAMA_URL / OLLAMA_MODEL to use a
 local LLM (falls back to deterministic summaries when it's unavailable), TI_FEED to point at
 an offline feed, or VT_API_KEY to use VirusTotal instead.
 """
@@ -23,6 +24,7 @@ from .paths import sample_feed_path
 from .pipeline import Orchestrator
 from .policy import ResponsePolicy, default_policy_path
 from .store import Store
+from .tickets import GitHubIssuesTickets
 
 
 class IngestRequest(BaseModel):
@@ -39,8 +41,11 @@ def build_orchestrator() -> Orchestrator:
                 else LocalFeedProvider(os.environ.get("TI_FEED", str(sample_feed_path()))))
     llm = (OllamaSummarizer(model=os.environ.get("OLLAMA_MODEL", "llama3.2:3b"), url=os.environ["OLLAMA_URL"])
            if os.environ.get("OLLAMA_URL") else None)
+    store = Store(os.environ.get("DB_PATH", "data/orchestrator.db"))
+    tickets = (GitHubIssuesTickets(os.environ["GITHUB_REPO"], os.environ["GITHUB_TOKEN"], store)
+               if os.environ.get("GITHUB_REPO") and os.environ.get("GITHUB_TOKEN") else None)
     return Orchestrator(ResponsePolicy.load(os.environ.get("POLICY", str(default_policy_path()))),
-                        Store(os.environ.get("DB_PATH", "data/orchestrator.db")), Enricher(provider), llm)
+                        store, Enricher(provider), llm, tickets=tickets)
 
 
 def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
@@ -54,7 +59,8 @@ def create_app(orchestrator: Orchestrator | None = None) -> FastAPI:
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "version": __version__, "llm": orch.llm.name if orch.llm else "rules-fallback"}
+        return {"status": "ok", "version": __version__, "llm": orch.llm.name if orch.llm else "rules-fallback",
+                "tickets": orch.tickets.name}
 
     @app.post("/ingest", dependencies=[Depends(auth)])
     def ingest(req: IngestRequest) -> dict:

@@ -2,6 +2,10 @@
 # and what it must never do automatically. Reviewed like code (PR + CI).
 version: 1
 
+# The only actions this deployment may take, in any form. Anything else is refused.
+# Remove an entry to switch that capability off without touching code.
+allowed_actions: [create_ticket, notify_oncall, block_ioc, isolate_host, disable_account]
+
 thresholds:
   ticket: 15            # open a ticket at or above this risk score
   notify_oncall: 60     # page on-call at or above this score

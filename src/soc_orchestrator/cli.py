@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from .paths import sample_events_path, sample_feed_path
 from .pipeline import Orchestrator, RunResult
 from .policy import ResponsePolicy, default_policy_path
 from .store import Store
+from .tickets import GitHubIssuesTickets
 
 ICON = {"ALLOW": "✅", "REQUIRE_APPROVAL": "✋", "BLOCK": "⛔"}
 
@@ -53,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--ti-feed", default=str(sample_feed_path()))
     run.add_argument("--ollama", metavar="URL", help="use a local Ollama for summaries")
     run.add_argument("--model", default="llama3.2:3b")
+    run.add_argument("--github-repo", metavar="OWNER/NAME", help="open tickets as GitHub Issues (token from GITHUB_TOKEN)")
     ver = sub.add_parser("verify", help="verify the audit hash chain")
     ver.add_argument("--db", default="data/orchestrator.db")
     a = ap.parse_args(argv)
@@ -63,8 +66,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if ok else 1
 
     store = Store(a.db)
+    tickets = None
+    if a.github_repo:
+        token = os.environ.get("GITHUB_TOKEN")
+        if not token:
+            ap.error("--github-repo needs a GITHUB_TOKEN environment variable")
+        tickets = GitHubIssuesTickets(a.github_repo, token, store)
     orch = Orchestrator(ResponsePolicy.load(a.policy), store, Enricher(LocalFeedProvider(a.ti_feed)),
-                        OllamaSummarizer(a.model, a.ollama) if a.ollama else None)
+                        OllamaSummarizer(a.model, a.ollama) if a.ollama else None, tickets=tickets)
     result = orch.run(Path(a.file).read_text(encoding="utf-8").splitlines())
     print(report(result))
     ok, _ = store.verify_audit()

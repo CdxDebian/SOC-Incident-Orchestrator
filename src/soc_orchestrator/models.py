@@ -49,7 +49,7 @@ class Event(BaseModel):
 
 class IOC(BaseModel):
     model_config = ConfigDict(frozen=True)
-    type: str     # ip | domain | url | sha256 | sha1 | md5
+    type: str     # ip | domain | url | email | sha256 | sha1 | md5
     value: str
 
 

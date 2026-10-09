@@ -17,6 +17,12 @@ import yaml
 
 from .models import ActionDecision, Incident
 
+KNOWN_ACTIONS = ("create_ticket", "notify_oncall", "block_ioc", "isolate_host", "disable_account")
+
+
+class PolicyError(ValueError):
+    pass
+
 
 @dataclass(frozen=True)
 class ResponsePolicy:
@@ -30,6 +36,7 @@ class ResponsePolicy:
     never_block: tuple[str, ...] = ()
     max_isolations: int = 3
     block_ioc_min_ti_score: int = 70
+    allowed_actions: frozenset[str] = frozenset(KNOWN_ACTIONS)
     extra: dict = field(default_factory=dict)
 
     @classmethod
@@ -45,7 +52,16 @@ class ResponsePolicy:
             never_block=tuple(str(x).lower() for x in d.get("never_block", [])),
             max_isolations=int(d.get("max_isolations_per_incident", 3)),
             block_ioc_min_ti_score=int((d.get("auto_execute") or {}).get("block_ioc_min_ti_score", 70)),
+            allowed_actions=_allowlist(d.get("allowed_actions", KNOWN_ACTIONS)),
         )
+
+
+def _allowlist(actions) -> frozenset[str]:
+    allowed = frozenset(str(a) for a in actions or [])
+    unknown = allowed - set(KNOWN_ACTIONS)
+    if unknown:
+        raise PolicyError(f"allowed_actions contains unknown actions: {sorted(unknown)}")
+    return allowed
 
 
 def default_policy_path() -> Path:
@@ -111,6 +127,11 @@ def decide(incident: Incident, policy: ResponsePolicy) -> list[ActionDecision]:
                 out.append(ActionDecision(action="disable_account", target=user, decision="REQUIRE_APPROVAL",
                                           reasons=[f"risk {s} >= {policy.disable_account}", "logon after brute force (T1078)", *taint_note]))
 
+    # Allowlist last, so it overrides everything: an action this deployment hasn't enabled never runs.
+    for a in out:
+        if a.action not in policy.allowed_actions:
+            a.decision = "BLOCK"
+            a.reasons = [f"'{a.action}' is not on this deployment's action allowlist", *a.reasons]
     for a in out:
         a.status = {"ALLOW": "pending", "REQUIRE_APPROVAL": "pending", "BLOCK": "blocked"}[a.decision]
     return out

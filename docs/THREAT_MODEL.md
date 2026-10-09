@@ -42,6 +42,9 @@ flowchart LR
 | 9 | Covering tracks | Editing or deleting an audit row | SHA-256 chain over every record; `verify` names the first broken row | `test_audit_tampering_is_detected`, `test_audit_deletion_is_detected` |
 | 10 | Secrets in logs | Passwords on command lines, tokens in URLs | Redaction before any audit write | `test_secrets_are_redacted_before_audit` |
 | 11 | Unauthorised API use | Anyone calling `/approve` | `X-API-Key` (constant-time compare); approver identity required on every approval | `test_api_key_enforced`, `test_approval_flow_requires_identity_and_only_once` |
+| 12 | Data leaking into the ticketing system | Secrets or attacker text pushed into a GitHub issue; `@mentions` paging people | Issue bodies carry scores, factors and techniques, not raw telemetry; secrets redacted; `@` neutralised; token only in the auth header | `test_issue_body_is_explained_redacted_and_cannot_ping_people` |
+| 13 | Over-broad correlation | Unrelated hosts merged because they share a service account | Weighted linking: a shared user alone (0.3) never meets the 0.5 threshold | `test_shared_user_alone_never_links` |
+| 14 | Capability creep | A new action type quietly added in code | Explicit `allowed_actions` in policy, applied last; unknown actions refused at load | `test_action_not_on_allowlist_is_blocked`, `test_unknown_action_in_policy_is_refused` |
 
 ## Known limitations
 
