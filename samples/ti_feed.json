@@ -1,0 +1,32 @@
+{
+  "185.220.101.47": {
+    "verdict": "malicious",
+    "score": 95,
+    "note": "Tor exit node; brute-force source"
+  },
+  "update-cdn.xyz": {
+    "verdict": "malicious",
+    "score": 92,
+    "note": "PowerShell stager distribution"
+  },
+  "91.92.109.14": {
+    "verdict": "malicious",
+    "score": 88,
+    "note": "C2 server"
+  },
+  "http://update-cdn.xyz/a.ps1": {
+    "verdict": "malicious",
+    "score": 90,
+    "note": "stager URL"
+  },
+  "9f2b4c1e7a3d5b8c0e6f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d": {
+    "verdict": "suspicious",
+    "score": 60,
+    "note": "unsigned dropper, low prevalence"
+  },
+  "8.8.8.8": {
+    "verdict": "malicious",
+    "score": 90,
+    "note": "feed false positive (public DNS)"
+  }
+}

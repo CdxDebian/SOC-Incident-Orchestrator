@@ -1,0 +1,29 @@
+# Response policy — what the orchestrator may do on its own, what needs a human,
+# and what it must never do automatically. Reviewed like code (PR + CI).
+version: 1
+
+thresholds:
+  ticket: 15            # open a ticket at or above this risk score
+  notify_oncall: 60     # page on-call at or above this score
+  isolate_host: 80      # propose host isolation at or above this score
+  disable_account: 70   # propose disabling a compromised account at or above this score
+
+# Assets that raise risk when involved (scoring) — e.g. domain controllers, finance servers.
+critical_assets: [dc01, fin-db01]
+
+# Never isolated automatically or on approval through this tool: taking these offline is a
+# business decision that goes through the major-incident process.
+never_isolate: [dc01]
+
+# Accounts the orchestrator must never disable (break-glass, service accounts).
+protected_accounts: [administrator, svc_backup, breakglass]
+
+# Indicators that must never be blocked even if a feed says so (shared infra, own ranges).
+never_block: [8.8.8.8, 1.1.1.1, corp.example, microsoft.com]
+
+# Blast-radius cap: more hosts than this in one incident and isolation is refused.
+max_isolations_per_incident: 3
+
+# Actions with a decision of ALLOW still need these to be true:
+auto_execute:
+  block_ioc_min_ti_score: 70      # only block IOCs with strong TI evidence

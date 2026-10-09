@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soc-incident-orchestrator"
+version = "1.0.0"
+description = "AI-assisted SOC incident response pipeline with explainable scoring, an LLM evidence boundary and policy-as-code guardrails."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Rahul Shrivastava" }]
+requires-python = ">=3.10"
+dependencies = ["fastapi>=0.110", "pydantic>=2.6", "PyYAML>=6.0", "httpx>=0.27", "uvicorn>=0.29"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+soc-orchestrator = "soc_orchestrator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 160
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E731"]

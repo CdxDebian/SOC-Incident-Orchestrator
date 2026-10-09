@@ -1,0 +1,25 @@
+services:
+  orchestrator:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      DB_PATH: /app/data/orchestrator.db
+      ORCH_API_KEY: ${ORCH_API_KEY:-change-me}
+      OLLAMA_URL: ${OLLAMA_URL:-}          # e.g. http://ollama:11434 with the "llm" profile
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      VT_API_KEY: ${VT_API_KEY:-}          # empty = offline TI feed in samples/
+    volumes: ["orchestrator-data:/app/data"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+
+  # Optional local LLM:  OLLAMA_URL=http://ollama:11434 docker compose --profile llm up
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["llm"]
+    volumes: ["ollama-models:/root/.ollama"]
+
+volumes:
+  orchestrator-data:
+  ollama-models:
